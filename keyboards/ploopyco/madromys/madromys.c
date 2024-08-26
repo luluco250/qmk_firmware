@@ -4,7 +4,7 @@
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 2 of the License, or
+ * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version.
  *
  * This program is distributed in the hope that it will be useful,
@@ -22,7 +22,7 @@
 #    define PLOOPY_DPI_OPTIONS \
         { 600, 900, 1200, 1600 }
 #    ifndef PLOOPY_DPI_DEFAULT
-#        define PLOOPY_DPI_DEFAULT 1
+#        define PLOOPY_DPI_DEFAULT 3
 #    endif
 #endif
 #ifndef PLOOPY_DPI_DEFAULT
@@ -45,6 +45,12 @@
 #endif
 #ifndef PLOOPY_DRAGSCROLL_INVERT
 #    define PLOOPY_DRAGSCROLL_INVERT 1
+#endif
+#ifndef PLOOPY_COMBO_SCROLL
+#    define PLOOPY_COMBO_SCROLL 1
+#endif
+#ifndef PLOOPY_AUTO_BREAK_SCROLL
+#    define PLOOPY_AUTO_BREAK_SCROLL 1
 #endif
 
 keyboard_config_t keyboard_config;
@@ -107,7 +113,19 @@ report_mouse_t pointing_device_task_kb(report_mouse_t mouse_report) {
     return pointing_device_task_user(mouse_report);
 }
 
+static void handle_scroll_toggle(void) {
+    #ifdef PLOOPY_DRAGSCROLL_FIXED
+            pointing_device_set_cpi(is_drag_scroll ? PLOOPY_DRAGSCROLL_DPI : dpi_array[keyboard_config.dpi_config]);
+    #else
+            pointing_device_set_cpi(is_drag_scroll ? (dpi_array[keyboard_config.dpi_config] * PLOOPY_DRAGSCROLL_MULTIPLIER) : dpi_array[keyboard_config.dpi_config]);
+    #endif
+}
+
 bool process_record_kb(uint16_t keycode, keyrecord_t* record) {
+    #ifdef PLOOPY_COMBO_SCROLL
+    static uint16_t timer;
+    #endif
+
     if (!process_record_user(keycode, record)) {
         return false;
     }
@@ -119,17 +137,34 @@ bool process_record_kb(uint16_t keycode, keyrecord_t* record) {
     }
 
     if (keycode == DRAG_SCROLL) {
-#ifndef PLOOPY_DRAGSCROLL_MOMENTARY
-        if (record->event.pressed)
-#endif
-        {
-            is_drag_scroll ^= 1;
-        }
-#ifdef PLOOPY_DRAGSCROLL_FIXED
-        pointing_device_set_cpi(is_drag_scroll ? PLOOPY_DRAGSCROLL_DPI : dpi_array[keyboard_config.dpi_config]);
-#else
-        pointing_device_set_cpi(is_drag_scroll ? (dpi_array[keyboard_config.dpi_config] * PLOOPY_DRAGSCROLL_MULTIPLIER) : dpi_array[keyboard_config.dpi_config]);
-#endif
+        #ifdef PLOOPY_COMBO_SCROLL
+            if (record->event.pressed)
+            {
+                timer = timer_read();
+                is_drag_scroll ^= 1;
+            } else {
+                if (timer_elapsed(timer) > 200) {
+                    is_drag_scroll = 0;
+                }
+            }
+        #else
+        // original behavior
+            #ifndef PLOOPY_DRAGSCROLL_MOMENTARY
+            if (record->event.pressed)
+            #endif
+            {
+                is_drag_scroll ^= 1;
+            }
+        #endif
+
+        handle_scroll_toggle();
+
+    } else {
+        #if PLOOPY_AUTO_BREAK_SCROLL == 1
+        // any other keypress will disable drag scroll
+        is_drag_scroll = 0;
+        handle_scroll_toggle();
+        #endif
     }
 
     return true;
@@ -174,3 +209,4 @@ void matrix_init_kb(void) {
     }
     matrix_init_user();
 }
+
